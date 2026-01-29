@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # استخدام Ubuntu 20.04 بدلاً من latest
     timeout-minutes: 60
 
     steps:
@@ -34,13 +34,15 @@ jobs:
             git zip unzip openjdk-17-jdk wget \
             python3-pip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev
+            cmake libffi-dev libssl-dev \
+            build-essential ccache libsqlite3-dev \
+            libffi-dev libssl-dev python3-dev
 
-      - name: تثبيت مكتبات Python
+      - name: Install Cython and Buildozer
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install cython==0.29.36
-          pip install buildozer
+          pip install --upgrade cython==0.29.36
+          pip install --upgrade buildozer
 
       - name: التحقق من الملفات المطلوبة
         run: |
@@ -58,15 +60,17 @@ jobs:
 
       - name: بناء ملف APK
         run: |
-          buildozer -v android debug
+          yes | buildozer -v android debug
         env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m -Dorg.gradle.daemon=false"
 
       - name: عرض نتائج البناء
         if: always()
         run: |
           echo "محتويات مجلد bin:"
-          ls -lah bin/ || echo "مجلد bin غير موجود"
+          ls -lah bin/ 2>/dev/null || echo "مجلد bin غير موجود"
+          echo "البحث عن ملفات APK:"
+          find . -name "*.apk" 2>/dev/null || echo "لا توجد ملفات APK"
 
       - name: رفع ملف APK
         uses: actions/upload-artifact@v4
@@ -74,6 +78,7 @@ jobs:
         with:
           name: kivy-android-app
           path: bin/*.apk
+          if-no-files-found: error
 
       - name: رفع سجلات الأخطاء
         uses: actions/upload-artifact@v4
@@ -82,4 +87,5 @@ jobs:
           name: build-logs
           path: |
             .buildozer/android/logs/
+            .buildozer/android/platform/build-*/logs/
           if-no-files-found: warn
