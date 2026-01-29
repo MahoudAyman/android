@@ -8,76 +8,78 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - name: تحميل الكود
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: إعداد Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Cache Buildozer
+      - name: حفظ ملفات Buildozer المؤقتة
         uses: actions/cache@v4
         with:
-          path: |
-            .buildozer
-            ~/.buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}-${{ hashFiles('requirements.txt') }}
+          path: .buildozer
+          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-
+            ${{ runner.os }}-buildozer-
 
-      - name: Install system dependencies
+      - name: تثبيت متطلبات النظام
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git zip unzip openjdk-17-jdk wget \
             python3-pip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev \
-            automake gettext libltdl-dev
+            libtinfo5 cmake libffi-dev libssl-dev
 
-      - name: Install Python dependencies
+      - name: تثبيت مكتبات Python
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install --upgrade cython==0.29.36
-          pip install --upgrade buildozer
+          python -m pip install --upgrade pip wheel setuptools
+          pip install cython==0.29.36
+          pip install buildozer
 
-      - name: Verify buildozer.spec exists
+      - name: التحقق من الملفات المطلوبة
         run: |
+          echo "فحص الملفات الضرورية..."
+          ls -la
           if [ ! -f buildozer.spec ]; then
-            echo "Error: buildozer.spec not found!"
+            echo "خطأ: ملف buildozer.spec غير موجود!"
             exit 1
           fi
-          cat buildozer.spec
+          if [ ! -f main.py ]; then
+            echo "خطأ: ملف main.py غير موجود!"
+            exit 1
+          fi
+          echo "جميع الملفات موجودة ✓"
 
-      - name: Build APK
+      - name: بناء ملف APK
         run: |
-          yes | buildozer -v android debug
+          buildozer -v android debug
         env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx1536m -Dorg.gradle.daemon=false"
-          ANDROIDSDK: ~/.buildozer/android/platform/android-sdk
-          ANDROIDNDK: ~/.buildozer/android/platform/android-ndk
-          ANDROIDAPI: "31"
-          ANDROIDMINAPI: "21"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m"
 
-      - name: List bin directory
+      - name: عرض نتائج البناء
         if: always()
         run: |
-          ls -la bin/ || echo "bin directory not found"
+          echo "محتويات مجلد bin:"
+          ls -lah bin/ || echo "مجلد bin غير موجود"
 
-      - name: Upload APK
+      - name: رفع ملف APK
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: kivy-app-debug
+          name: kivy-android-app
           path: bin/*.apk
-          if-no-files-found: error
 
-      - name: Upload build logs
+      - name: رفع سجلات الأخطاء
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: buildozer-logs
-          path: .buildozer/android/logs/
+          name: build-logs
+          path: |
+            .buildozer/android/logs/
+          if-no-files-found: warn
