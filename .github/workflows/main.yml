@@ -3,32 +3,31 @@ name: Build Kivy Android APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
-      # 1️⃣ Checkout repo
       - uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # 3.12 may have compatibility issues with some buildozer recipes
+          python-version: '3.11'
 
-      # 3️⃣ Cache buildozer dependencies
-      - name: Cache Buildozer global directory
+      - name: Cache Buildozer
         uses: actions/cache@v4
         with:
-          path: .buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}
+          path: |
+            .buildozer
+            ~/.buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            buildozer-
 
-      # 4️⃣ Install system dependencies
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -36,42 +35,49 @@ jobs:
             git zip unzip openjdk-17-jdk wget \
             python3-pip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
-            libtinfo5 cmake libffi-dev libssl-dev
+            libtinfo5 cmake libffi-dev libssl-dev \
+            automake gettext libltdl-dev
 
-      # 5️⃣ Install Python dependencies
-      - name: Install Python packages
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade cython==0.29.36  # Specify version for stability
+          python -m pip install --upgrade pip setuptools wheel
+          pip install --upgrade cython==0.29.36
           pip install --upgrade buildozer
 
-      # 6️⃣ Make buildozer executable
-      - name: Make gradlew executable
+      - name: Verify buildozer.spec exists
         run: |
-          mkdir -p .buildozer/android/platform/build-*
-          chmod +x .buildozer/android/platform/build-*/build/tools/android/gradlew || true
+          if [ ! -f buildozer.spec ]; then
+            echo "Error: buildozer.spec not found!"
+            exit 1
+          fi
+          cat buildozer.spec
 
-      # 7️⃣ Build APK
-      - name: Build APK with Buildozer
+      - name: Build APK
         run: |
-          buildozer android debug
+          yes | buildozer -v android debug
         env:
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048m"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx1536m -Dorg.gradle.daemon=false"
+          ANDROIDSDK: ~/.buildozer/android/platform/android-sdk
+          ANDROIDNDK: ~/.buildozer/android/platform/android-ndk
+          ANDROIDAPI: "31"
+          ANDROIDMINAPI: "21"
 
-      # 8️⃣ Upload APK artifact
+      - name: List bin directory
+        if: always()
+        run: |
+          ls -la bin/ || echo "bin directory not found"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
-          name: kivy-app-debug-apk
+          name: kivy-app-debug
           path: bin/*.apk
           if-no-files-found: error
 
-      # 9️⃣ Optional: Create release on tag
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        if: failure()
         with:
-          files: bin/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: buildozer-logs
+          path: .buildozer/android/logs/
